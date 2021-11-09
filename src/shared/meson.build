@@ -151,6 +151,8 @@ shared_sources = files('''
         reboot-util.h
         resolve-util.c
         resolve-util.h
+        rpi-id.c
+        rpi-id.h
         seccomp-util.h
         securebits-util.c
         securebits-util.h

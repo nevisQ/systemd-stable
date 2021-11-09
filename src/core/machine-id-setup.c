@@ -11,6 +11,7 @@
 #include "fd-util.h"
 #include "fs-util.h"
 #include "id128-util.h"
+#include "khash.h"
 #include "log.h"
 #include "machine-id-setup.h"
 #include "macro.h"
@@ -25,13 +26,37 @@
 #include "util.h"
 #include "virt.h"
 
+#include "rpi-id.h"
+
 static int generate_machine_id(const char *root, sd_id128_t *ret) {
         const char *dbus_machine_id;
+        _cleanup_free_ char *serial = NULL;
         _cleanup_close_ int fd = -1;
         int r;
 
         assert(ret);
+        /* Use hash(rpi serial) as machine id for Raspberry systems */
+        r = get_raspberrypi_serial(root, &serial);
+        if (r > 0) {
+                _cleanup_(khash_unrefp) khash *h = NULL;
+                _cleanup_free_ char *hashed_serial = NULL;
 
+                if (khash_new(&h, "md5") >= 0) {
+                        if (khash_put(h, serial, r) >= 0) {
+                                if (khash_digest_string(h, &hashed_serial) >= 0 &&
+                                    sd_id128_from_string(hashed_serial, ret) >= 0) {
+                                        log_info("Initializing machine ID using raspberry pi serial: %s.", serial);
+                                        return 0;
+                                }
+                        }
+
+                        h = khash_unref(h);
+                }
+
+                serial = mfree(serial);
+        }
+
+        log_info("WARN: Can't initialize machine ID using raspberry pi serial.");
         /* First, try reading the D-Bus machine id, unless it is a symlink */
         dbus_machine_id = prefix_roota(root, "/var/lib/dbus/machine-id");
         fd = open(dbus_machine_id, O_RDONLY|O_CLOEXEC|O_NOCTTY|O_NOFOLLOW);
